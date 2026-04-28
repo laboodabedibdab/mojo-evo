@@ -6,18 +6,55 @@ from std import time
 struct Model:
 	var weights: UnsafePointer[Float16, MutExternalOrigin]
 	var bias: UnsafePointer[Float16, MutExternalOrigin]
+	var rand_multiply_matrix_weights: UnsafePointer[Float16, MutExternalOrigin]
+	var rand_multiply_matrix_bias: UnsafePointer[Float16, MutExternalOrigin]
 
 	def forward(read self, inputs: SIMD[DType.float16, 16]) -> SIMD[DType.float16, 16]:
 		var res: SIMD[DType.float16, 16] = inputs
 		var res_copy = res.copy()
+		
 		for i in range(8):
 			for j in range(16):
 				res_copy[j] = (res * self.weights.load[dtype=DType.float16, width=16](i*16+j*16)).reduce_add()
 			res = res_copy + self.bias.load[dtype=DType.float16, width=16](i*16)
 		return res
+
+	def mutate(mut self, a: Float16, b: Float64):
+
+		#var rand_multiply_matrix_weights = alloc[Float16](16 * 16 * 8)
+		#var rand_multiply_matrix_bias = alloc[Float16](16 * 8)
+		var rand_simd_weights: SIMD[DType.float16, 16 * 16 * 8]
+		var rand_simd_bias: SIMD[DType.float16, 16 * 8]
+		rand[DType.float16](self.rand_multiply_matrix_weights, 16 * 16 * 8, min=-1*b, max=b)
+		rand[DType.float16](self.rand_multiply_matrix_bias, 16 * 8, min=-1*b, max=b)
+		rand_simd_weights = self.rand_multiply_matrix_weights.load[dtype=DType.float16, width=16*16*8]()
+		rand_simd_bias = self.rand_multiply_matrix_bias.load[dtype=DType.float16, width=16*8]()
+		orig_simd_weights = self.weights.load[dtype=DType.float16, width=16*16*8]()
+		orig_simd_bias = self.bias.load[dtype=DType.float16, width=16*8]()
+		rand_simd_weights=(rand_simd_weights-orig_simd_weights)*a+orig_simd_weights
+		rand_simd_bias=(rand_simd_bias-orig_simd_bias)*a+orig_simd_bias
+		self.weights.store(rand_simd_weights)
+		self.bias.store(rand_simd_bias)
+		
+
+
+
+
+
+	def free_all(mut self):
+		self.weights.free()
+		self.bias.free()
+
+		self.rand_multiply_matrix_weights.free()
+		self.rand_multiply_matrix_bias.free()
+
+
+
 	def __init__(out self, weights: List[List[List[Float16]]], bias: List[List[Float16]]):
 		self.weights = alloc[Float16](16 * 16 * 8)
 		self.bias = alloc[Float16](16 * 8)
+		self.rand_multiply_matrix_weights = alloc[Float16](16 * 16 * 8)
+		self.rand_multiply_matrix_bias = alloc[Float16](16 * 8)
 		#var ws = len(weights)
 		#var lr = len(weights[0])
 		#var nr = len(weights[0][0])
@@ -44,23 +81,23 @@ def main() raises:
 #	var a = alloc[UInt8](1_000_000)
 #	for i in range(1_000_000):
 #		(a+i).init_pointee_copy(UInt8(i>994999))
-#	try:
-#		var column_str = input('Столбец: ')
-#		var column = Int(column_str)
-#
-#		var stroke_str = input('Строка: ')
-#		var stroke = Int(stroke_str)
-#
-#		while True:
-#			print(a[column + stroke*WIDTH - (1+WIDTH)])
-#			column_str = input('Столбец: ')
-#			column = Int(column_str)
-#
-#			stroke_str = input('Строка: ')
-#			stroke = Int(stroke_str)
-#	finally:
-#		a.free()
+
 	mm = Model([[[0.5]]],[[0.5]])
-	var result = mm.forward(SIMD[DType.float16, 16](0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15))
-	for el_i in range(16):
-		print(result[el_i])
+	var result = SIMD[DType.float16, 16](0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0)
+	var c = 0
+	var a_str = input()
+	var a = Float16(Float64(a_str))
+	var start = time.perf_counter()
+	while abs(result.reduce_add()-10)!=0:
+		#print(result.reduce_add())
+		mm.mutate(a,2)
+		#c+=1
+		result = mm.forward(SIMD[DType.float16, 16](0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15))
+	var stop = time.perf_counter()
+	print("MUTATED!")
+	print(c)
+	print(stop-start)
+
+	result = mm.forward(SIMD[DType.float16, 16](0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15))
+	print(result.reduce_add())
+	mm.free_all()

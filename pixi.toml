@@ -7,4 +7,4 @@ version = "0.1.0"
 [tasks]
 
 [dependencies]
-mojo = ">=1.0.0b1.dev2026042405,<2"
+mojo = ">=1.0.0b1.dev2026042717,<2"
