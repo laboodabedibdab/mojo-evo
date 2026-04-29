@@ -35,8 +35,9 @@ struct Model:
 
 		#var rand_multiply_matrix_weights = alloc[Float16](16 * 16 * 8)
 		#var rand_multiply_matrix_bias = alloc[Float16](16 * 8)
-		var rand_simd_weights = bitcast[DType.int16, 16*16*8](get_tsc())
-		var rand_simd_bias = bitcast[DType.int16, 16*8](get_tsc())
+
+		var rand_simd_weights = iota[DType.int16, 16*16*8](Int16(get_tsc()))
+		var rand_simd_bias = iota[DType.int16, 16*8](Int16(get_tsc()))
 		
 		var bits_weights = (rand_simd_weights & 0x03FF) | 0x3C00
 		var bits_bias = (rand_simd_bias & 0x03FF) | 0x3C00
@@ -83,53 +84,37 @@ struct Model:
 
 
 
-	def __init__(out self, weights: List[List[List[Float16]]], bias: List[List[Float16]]):
+	def __init__(out self):
+		#, weights: UnsafePointer[Float16, MutExternalOrigin], bias: UnsafePointer[Float16, MutExternalOrigin]
 		self.weights = alloc[Float16](16 * 16 * 8)
 		self.bias = alloc[Float16](16 * 8)
 		self.rand_multiply_matrix_weights = alloc[Float16](16 * 16 * 8)
 		self.rand_multiply_matrix_bias = alloc[Float16](16 * 8)
-
-		#var ws = len(weights)
-		#var lr = len(weights[0])
-		#var nr = len(weights[0][0])
-		#var bws = len(weights)
-		#var blr = len(weights[0])
-		#var i = 0
-		#var bi = 0
 		rand[DType.float16](self.weights, 16 * 16 * 8, min=-0.2, max=0.2)
 		rand[DType.float16](self.bias, 16 * 8, min=-0.2, max=0.2)
-#		for layer_i in range(ws):
-#			for neuron_i in range(lr):
-#				for w_i in range(nr):
-#					i = layer_i * (lr*nr) + neuron_i * nr + w_i
-#					(self.weights+i).init_pointee_copy(weights[layer_i][neuron_i][w_i])
-#		for blayer_i in range(bws):
-#			for bneuron_i in range(blr):
-#				bi = blayer_i * blr + bneuron_i
-#				(self.bias+bi).init_pointee_copy(bias[blayer_i][bneuron_i])
 
 
 
 
 def main() raises:
-#	seed(Int(time.perf_counter()))
-#	comptime WIDTH = 1000
-#	comptime HEIGHT = 1000
-#	var a = alloc[UInt8](1_000_000)
+	#seed(Int(time.perf_counter()))
+	#comptime WIDTH = 1000
+	#comptime HEIGHT = 1000
+	#var a = alloc[UInt8](1_000_000)
 #	for i in range(1_000_000):
 #		(a+i).init_pointee_copy(UInt8(i>994999))
 	print(get_tsc())
-	mm = Model([[[0.5]]],[[0.5]])
+	mm = Model()
 	var result = SIMD[DType.float16, 16](0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0)
 	var c = 0
-	var a_str = input()
-	var a = Float16(Float64(a_str))
+	var b_str = input()
+	var b = Float16(Float64(b_str))
 	var start = time.perf_counter()
-	#while abs(result.reduce_add()-10)!=0:
+	while abs(result.reduce_add()-1)!=0:
 		#print(result.reduce_add())
-	mm.mutate(a,2)
-		#c+=1
-		#result = mm.forward(SIMD[DType.float16, 16](0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15))
+		mm.mutate(b,2)
+		c+=1
+		result = mm.forward(SIMD[DType.float16, 16](0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15))
 	var stop = time.perf_counter()
 	print("MUTATED!")
 	
