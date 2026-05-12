@@ -1,45 +1,40 @@
-"""
-Поле,Биты,Размер,Описание
+"""Симуляция эволюции агентов.
+
+Поле,Биты,Размер,Описание.
 PointerIndex,0-23,24 бита,Позиция на карте 4096×4096
 Energy,24-33,10 бит,0–1023 (твой предел)
 Flags,44-75,32 бита,4 флага по 8 бит (или 32 булевых флага)
 Genome PC,34-43,10 бит,Указатель на команду (до 1024 инструкций в геноме!)
 Specs,76-125,50 бит,"5 параметров (сипа «сила», «защита» и т.д.) по 10 бит"
 Type Tag,126-127,2 бита,"01 — живой агент, 10 — труп, 00/11 — пусто"
-
-
+...
 Короче флаги:
 фотосинтез с>>6
 атака 64 - с>>4
 переработка органики(трупоедство) o*c >> 10
 передача энергии o*c >> 8
 деление o*c >> 11 и это же ребенку
+...
+stop           0000 ставит каунтер на ноль 4 бита, один ниблл
+move           0001 двигает агента по указанному направлению, 4 бита команды 2 бита направления 2 бита выравнивания, 2 ниблла
+photosyntez    0010 дает энергию, 4 бита, один ниблл
+eat            0011 поедает труп по указанному направлению, 4 бита команды 2 бита направления 2 бита выравнивания, 2 ниблла
+attack         0100 атакует агента по указанному направлению, 4 бита команды 2 бита направления 2 бита выравнивания, 2 ниблла
+divide         0101 делиться по указанному направлению, 4 бита команды 2 бита направления 2 бита выравнивания, 2 ниблла
+rest           0110 скипает один ход, 4 бита, один ниблл
+deep_sleep     0111 скипат n ходов, 4 бита команды 4 бита тиков(n максимум 15), 2 ниблла
+talk_to        1000 кидает сообщние в флаг агента по указанному направлению, 4 бита команды 2 бита направления 8 бит сообщения 2 бита выравнивания, 4 ниблла
+give_energy    1001 дает энергию агенту по указанному направлению, 4 бита команды 2 бита направления 8 бит количества 2 бита выравнивания, 4 ниблла
+jmp            1010 ЕБАННЫЙ МРАК, позволяет агентам быть умными, заставляет меня чувствовать себя тупым, 4 бита команды 1 бит направления прыжка 7 бит дальности прыжка остальные 48+(6 выравнивания) бита под условия, каждое условие это 16 бит(4 бита что сравнивать, 4 бита кооп оп, 8 бит число сравнивать), 16 нибллов
+set_flag       1011 ставит в один из 4 флагов число 8 бит, 4 бита команды 2 бита флага 8 бит числа 2 бита выравнивания, 4 ниблла
+get_flag       1100 нету, надо удалть потом
+add            1101 добавляет число к флагу, 4 бита команды 2 бита флага 8 бит числа 2 бита выравнивания, 4 ниблла
+sub            1110 вычитает число из флага, 4 бита команды 2 бита флага 8 бит числа 2 бита выравнивания, 4 ниблла
+-              1111
+...
 
-
-move           0000
-photosyntez    0001
-eat            0010
-attack         0011
-divide         0100
-rest           0101
-deep_sleep     0110
-talk_to        0111
-give_energy    1000
-jmp            1001
-stop           1010
-set_flag       1011
-get_flag       1100
-add            1101
-sub            1110
-mul            1111
-
-
-
-jmp (comp var1 oper > < = != var2)(comp var1 oper > < = != var2)(comp var1 oper > < = != var2) jmp
-
-
-
-параметры(25):
+...
+параметры(16):
 энергия
 x
 y
@@ -53,19 +48,16 @@ lbd
 mbd
 rbd
 4 флага
-5 параметров
-
+...
 add photosyntez photosyntez photosyntez divide move
-1101 0001 0001 0001 
-.
-"""
+1101 0001 0001 0001."""
 
 
 from std.memory import bitcast
 
 def print_bin(val: UInt128):
     for i in range(128):
-        print((val<<i)>>127, end="")
+        print((val<<UInt128(i))>>127, end="")
     print()
 
 def print_agent(val: UInt128):
@@ -73,7 +65,7 @@ def print_agent(val: UInt128):
         print("Agent index: "+String(val>>108))
         print("Energy: "+String(val<<24>>118))
         for flag in range(8):
-            print((val<<(34+(flag*4)))>>124)
+            print((val<<UInt128(34+(flag*4)))>>124)
         print("Command index: "+String(val<<34>>118))
         print("photosyntez: "+String(val<<76>>118))
         print("attack: "+String(val<<86>>118))
@@ -83,17 +75,18 @@ def print_agent(val: UInt128):
     else:
         print("EMPTY SPACE")
 
-def move(dr:Int, i: Int, mut sim: UnsafePointer[UInt128, MutExternalOrigin]):
+def move(dr:Int, i: Int, mut sim: UnsafePointer[UInt128, MutExternalOrigin], mut agent_amount: UInt32):
     comptime lookup = SIMD[DType.int16, 8](-4104, -4096, -4088, -8, 8, 4088, 4096, 4104)
     energy = sim[i*8]<<24>>118
-    valid_energy_flag=UInt(0)-UInt128(energy>3)
-    empty_space_flag=UInt(0)-UInt128(Int((sim[i*8+lookup[dr]]<<126>>126)==0))
+    valid_energy_flag=UInt128(0)-UInt128(energy>3)
+    empty_space_flag=UInt128(0)-UInt128(Int((sim[(i*8+Int(lookup[dr]))&16777215]<<126>>126)==0))
     agent = (sim+i*8).load[width=8]()
     agent[0] &= ~(1023<<94)
     agent[0] |= (energy-3)<<94
     (sim+i*8).store(agent&(~((~valid_energy_flag)|empty_space_flag)))
     move_place = ((sim+i*8+lookup[dr]).load[width=8]()& ~empty_space_flag)|(agent&(valid_energy_flag&empty_space_flag))
     (sim+i*8+lookup[dr]).store(move_place)
+    agent_amount-=UInt32(Bool(not valid_energy_flag))
 
 def photosyntez(i: Int, mut sim: UnsafePointer[UInt128, MutExternalOrigin]):
     agent = (sim+i*8).load[width=8]()
@@ -103,53 +96,102 @@ def photosyntez(i: Int, mut sim: UnsafePointer[UInt128, MutExternalOrigin]):
     agent[0] |= ((energy+ph_stat)&1023)<<94
     (sim+i*8).store(agent)
 
-def eat(dir:Int, i: Int, mut sim: UnsafePointer[UInt128, MutExternalOrigin]):
+def eat(dr:Int, i: Int, mut sim: UnsafePointer[UInt128, MutExternalOrigin], mut agent_amount: UInt32):
     comptime lookup = SIMD[DType.int16, 8](-4104, -4096, -4088, -8, 8, 4088, 4096, 4104)
     energy = sim[i*8]<<24>>118
-    valid_energy_flag=UInt(0)-UInt128(energy>3)
-    organic_space_flag=UInt(0)-UInt128(Int((sim[(i*8+lookup[dr])&16777215]&3)==2))
-    add_energy = ((sim[(i*8+lookup[dr])&16777215]<<24>>118)*(sim[i*8]<<96>>118))>>10
+    valid_energy_flag=UInt128(0)-UInt128(energy>3)
+    organic_space_flag=UInt128(0)-UInt128(Int((sim[(i*8+Int(lookup[dr]))&16777215]&3)==2))
+    add_energy = ((sim[(i*8+Int(lookup[dr]))&16777215]<<24>>118)*(sim[i*8]<<96>>118))>>10
     add_energy&=organic_space_flag
     agent = (sim+i*8).load[width=8]()
     agent[0] &= ~(1023<<94)
     agent[0] |= ((energy+add_energy)&1023)<<94
     agent[0]&=valid_energy_flag
     (sim+i*8).store(agent)
+    agent_amount-=UInt32(Bool(not valid_energy_flag))
     
 
 
 
-def attack(dir:Int, i: Int, mut sim: UnsafePointer[UInt128, MutExternalOrigin]):
+def attack(dr:Int, i: Int, mut sim: UnsafePointer[UInt128, MutExternalOrigin], mut agent_amount: UInt32):
     comptime lookup = SIMD[DType.int16, 8](-4104, -4096, -4088, -8, 8, 4088, 4096, 4104)
     energy = sim[i*8]<<24>>118
     energy_loss=64-(sim[i*8]<<86>>118)
-    valid_energy_flag=UInt(0)-UInt128(energy>energy_loss)
-    enemy_space_flag=UInt(0)-UInt128(Int((sim[(i*8+lookup[dr])&16777215]&3)==1))
+    valid_energy_flag=UInt128(0)-UInt128(energy>energy_loss)
     
     agent = (sim+i*8).load[width=8]()
     agent[0] &= ~(1023<<94)
     agent[0] |= ((energy-energy_loss)&1023)<<94
     agent[0]&=valid_energy_flag
+    (sim+i*8).store(agent)
 
+    who = sim[i*8+Int(lookup[dr])]&3
+    a = who >> 1 # Старший бит
+    b = who & 1        # Младший бит
+    out_1 = a ^ b
+    out_0 = a & b
+    who = (out_1 << 1) | out_0
+    sim[i*8+Int(lookup[dr])&16777215]&=(UInt128(-4)|~valid_energy_flag)
+    sim[i*8+Int(lookup[dr])&16777215]|=(who&valid_energy_flag)
+    agent_amount-=UInt32(Bool(not valid_energy_flag))
     
 
 
-def divide(dir:Int, i: Int, mut sim: UnsafePointer[UInt128, MutExternalOrigin]):
-    pass #en half
+def divide(dr:Int, i: Int, mut sim: UnsafePointer[UInt128, MutExternalOrigin], mut agent_amount: UInt32):
+    energy = sim[i*8]<<24>>118
+    res_energy = (energy*((sim[i*8]<<116>>119)+512))>>11
+    comptime lookup = SIMD[DType.int16, 8](-4104, -4096, -4088, -8, 8, 4088, 4096, 4104)
+    #valid_energy_flag=UInt128(0)-UInt128(energy>3)
+    empty_space_flag=UInt128(0)-UInt128(Int((sim[(i*8+Int(lookup[dr]))&16777215]<<126>>126)==0))
+    agent = (sim+i*8).load[width=8]()
+    agent[0] &= ~(1023<<94)
+    agent[0] |= (res_energy)<<94
+    (sim+i*8).store(agent)
+    clone = ((sim+((i*8+lookup[dr])&16777215)).load[width=8]()& ~empty_space_flag)|(agent&empty_space_flag)
+    (sim+i*8+lookup[dr]).store(clone)
+    agent_amount+=UInt32(Bool(empty_space_flag))   
 
-def defend(i: Int, mut sim: UnsafePointer[UInt128, MutExternalOrigin]):
-    pass #en -10
+def defend(i: Int, mut sim: UnsafePointer[UInt128, MutExternalOrigin], mut agent_amount: UInt32):
+    energy = sim[i*8]<<24>>118
+    valid_energy_flag=UInt128(0)-UInt128(energy>15)
+    agent = (sim+i*8).load[width=8]()
+    agent[0] &= ~(1023<<94)
+    agent[0] |= ((energy-15)&1023)<<94
+    agent[0] |= UInt128(3)
+    agent[0]&=valid_energy_flag
+    (sim+i*8).store(agent)
+    agent_amount-=UInt32(Bool(not valid_energy_flag))
 
-def rest(i: Int, mut sim: UnsafePointer[UInt128, MutExternalOrigin]):
-    pass #en -1
+def rest(i: Int, mut sim: UnsafePointer[UInt128, MutExternalOrigin], mut agent_amount: UInt32):
+    energy = sim[i*8]<<24>>118
+    valid_energy_flag=UInt128(0)-UInt128(energy>1)
+    agent = (sim+i*8).load[width=8]()
+    agent[0] &= ~(1023<<94)
+    agent[0] |= ((energy-1)&1023)<<94
+    agent[0]&=valid_energy_flag
+    (sim+i*8).store(agent)
+    agent_amount-=UInt32(Bool(not valid_energy_flag))
 
-def deep_sleep(sleep_ticks: Int, i: Int, mut sim: UnsafePointer[UInt128, MutExternalOrigin]):
+def deep_sleep(sleep_ticks: Int, i: Int, mut sim: UnsafePointer[UInt128, MutExternalOrigin], mut agent_amount: UInt32):
     pass #en -5
 
-def talk_to(dir:Int, message: UInt128, i: Int, mut sim: UnsafePointer[UInt128, MutExternalOrigin]):
-    pass #en -2
+def talk_to(dr:Int, message: UInt128, i: Int, mut sim: UnsafePointer[UInt128, MutExternalOrigin], mut agent_amount: UInt32):
+    comptime lookup = SIMD[DType.int16, 8](-4104, -4096, -4088, -8, 8, 4088, 4096, 4104)
+    energy = sim[i*8]<<24>>118
+    valid_energy_flag=UInt128(0)-UInt128(energy>2)
+    agent_space_flag=UInt128(0)-UInt128(Int((sim[(i*8+Int(lookup[dr]))&16777215]&3)==1))
 
-def give_energy(dir:Int, amount: Int8, i: Int, mut sim: UnsafePointer[UInt128, MutExternalOrigin]):
+    agent = (sim+i*8).load[width=8]()
+    agent[0] &= ~(1023<<94)
+    agent[0] |= ((energy-2)&1023)<<94
+    agent[0]&=valid_energy_flag
+    (sim+i*8).store(agent)
+
+    sim[i*8+Int(lookup[dr])&16777215]&=(~(255<<62)|~valid_energy_flag|~agent_space_flag)
+    sim[i*8+Int(lookup[dr])&16777215]|=(((message<<62)&(255<<62))&valid_energy_flag&agent_space_flag)
+    agent_amount-=UInt32(Bool(not valid_energy_flag))
+
+def give_energy(dir:Int, amount: Int8, i: Int, mut sim: UnsafePointer[UInt128, MutExternalOrigin], mut agent_amount: UInt32):
     pass #en -am*alt_stat
 
 
@@ -177,10 +219,39 @@ def main():
     var ag_size_specs = 1
     var ag_size_mind = 7
     var sim = alloc[UInt128](wh*ww*(ag_size_specs+ag_size_mind))
-    var Adam = SIMD[DType.uint128, 8](10141204801825835493723748958465,0,0,0,0,0,0,0)
+
+
+    # Таблица длин команд в нибблах (16 значений для 16 возможных опкодов)
+    # Индексы: 0:stop, 1:move, 2:ph, 3:eat, 4:atck, 5:div, 6:rest, 7:sleep, 
+    #          8:talk, 9:give, 10:jmp, 11:set_f, 12:get_f, 13:add, 14:sub, 15:empty
+    comptime cmd_lengths = SIMD[DType.uint8, 16](
+        1,  # 0000 - stop (1 ниббл)
+        2,  # 0001 - move (2 ниббла)
+        1,  # 0010 - photosyntez (1 ниббл)
+        2,  # 0011 - eat (2 ниббла)
+        2,  # 0100 - attack (2 ниббла)
+        2,  # 0101 - divide (2 ниббла)
+        1,  # 0110 - rest (1 ниббл)
+        2,  # 0111 - deep_sleep (2 ниббла)
+        4,  # 1000 - talk_to (4 ниббла)
+        4,  # 1001 - give_energy (4 ниббла)
+        16, # 1010 - JMP (16 нибблов)
+        4,  # 1011 - set_flag (4 ниббла)
+        4,  # 1100 - get_flag (пока 4, хоть и удаляешь)
+        4,  # 1101 - add (4 ниббла)
+        4,  # 1110 - sub (4 ниббла)
+        1   # 1111 - резерев (1 ниббл)
+    )
+
+
+    var Adam = SIMD[DType.uint128, 8](138649284399963717789195174913,0,0,0,0,0,0,0)
+    var BAdam = SIMD[DType.uint128, 8](138649284399963717789195174913,0,0,0,0,0,0,0)
+    var count_ag: UInt32=2
     sim.store(Adam)
+    (sim+8).store(BAdam)
     print_agent(sim[0])
     print_bin(sim[0])
-    photosyntez(0,sim)
-    print_agent(sim[0])
-    print_bin(sim[0])
+    talk_to(4,255,0,sim,count_ag)
+    print_agent(sim[8])
+    print_bin(sim[8])
+    print(count_ag)
