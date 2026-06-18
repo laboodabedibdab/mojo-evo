@@ -1,59 +1,53 @@
-"""Симуляция эволюции агентов.
-
-Поле,Биты,Размер,Описание.
-PointerIndex,0-23,24 бита,Позиция на карте 4096×4096
-Energy,24-33,10 бит,0–1023 (твой предел)
-Flags,44-75,32 бита,4 флага по 8 бит (или 32 булевых флага)
-Genome PC,34-43,10 бит,Указатель на команду (до 1024 инструкций в геноме!)
-Specs,76-125,50 бит,"5 параметров (сипа «сила», «защита» и т.д.) по 10 бит"
-Type Tag,126-127,2 бита,"01 — живой агент, 10 — труп, 00/11 — пусто"
-...
-Короче флаги:
-фотосинтез с>>6
-атака 64 - с>>4
-переработка органики(трупоедство) o*c >> 10
-передача энергии o*c >> 8
-деление o*c >> 11 и это же ребенку
-...
-stop           0000 ставит каунтер на ноль 4 бита, один ниблл
-move           0001 двигает агента по указанному направлению, 4 бита команды 2 бита направления 2 бита выравнивания, 2 ниблла
-photosyntez    0010 дает энергию, 4 бита, один ниблл
-eat            0011 поедает труп по указанному направлению, 4 бита команды 2 бита направления 2 бита выравнивания, 2 ниблла
-attack         0100 атакует агента по указанному направлению, 4 бита команды 2 бита направления 2 бита выравнивания, 2 ниблла
-divide         0101 делиться по указанному направлению, 4 бита команды 2 бита направления 2 бита выравнивания, 2 ниблла
-rest           0110 скипает один ход, 4 бита, один ниблл
-deep_sleep     0111 скипат n ходов, 4 бита команды 4 бита тиков(n максимум 15), 2 ниблла
-talk_to        1000 кидает сообщние в флаг агента по указанному направлению, 4 бита команды 2 бита направления 8 бит сообщения 2 бита выравнивания, 4 ниблла
-give_energy    1001 дает энергию агенту по указанному направлению, 4 бита команды 2 бита направления 8 бит количества 2 бита выравнивания, 4 ниблла
-jmp            1010 ЕБАННЫЙ МРАК, позволяет агентам быть умными, заставляет меня чувствовать себя тупым, 4 бита команды 1 бит направления прыжка 7 бит дальности прыжка остальные 48+(6 выравнивания) бита под условия, каждое условие это 16 бит(4 бита что сравнивать, 4 бита кооп оп, 8 бит число сравнивать), 16 нибллов
-set_flag       1011 ставит в один из 4 флагов число 8 бит, 4 бита команды 2 бита флага 8 бит числа 2 бита выравнивания, 4 ниблла
-get_flag       1100 нету, надо удалть потом
-add            1101 добавляет число к флагу, 4 бита команды 2 бита флага 8 бит числа 2 бита выравнивания, 4 ниблла
-sub            1110 вычитает число из флага, 4 бита команды 2 бита флага 8 бит числа 2 бита выравнивания, 4 ниблла
--              1111
-...
-
-...
-параметры(16):
-энергия
-x
-y
-возраст
-ltd
-mtd
-rtd
-mld
-mrd
-lbd
-mbd
-rbd
-4 флага
-...
-add photosyntez photosyntez photosyntez divide move
-1101 0001 0001 0001."""
-
-
 from std.memory import bitcast
+
+@always_inline
+def get_index(header: UInt128) -> UInt128:
+    return header >> 104
+
+@always_inline
+def get_energy(header: UInt128) -> UInt128:
+    return (header << 24) >> 120
+
+@always_inline
+def get_innervar(header: UInt128, var_i: UInt128) -> UInt128:
+    return (header << (32+(var_i*8))) >> 120
+
+@always_inline
+def get_nibble(header: UInt128) -> UInt128:
+    return (header << 64) >> 120
+    
+@always_inline
+def get_coef(header: UInt128, coef_i: UInt128) -> UInt128:
+    return (header << (72+(coef_i*8))) >> 120
+    
+@always_inline
+def get_age(header: UInt128) -> UInt128:
+    return (header << 104) >> 106
+
+@always_inline
+def get_flag(header: UInt128) -> UInt128:
+    return header & 3
+
+@always_inline
+def is_empty(header: UInt128) -> UInt128:
+    return UInt128(0)-UInt128(Int((get_flag(header))==0))
+
+@always_inline
+def is_agent(header: UInt128) -> UInt128:
+    return UInt128(0)-UInt128(Int((get_flag(header))==1))
+
+@always_inline
+def is_organic(header: UInt128) -> UInt128:
+    return UInt128(0)-UInt128(Int((get_flag(header))==2))
+
+@always_inline
+def is_protected(header: UInt128) -> UInt128:
+    return UInt128(0)-UInt128(Int((get_flag(header))==3))
+
+@always_inline
+def valid_energy(header: UInt128, tld: UInt128) -> UInt128:
+    return UInt128(0)-UInt128(get_energy(header)>tld)
+
 
 def print_bin(val: UInt128):
     for i in range(128):
@@ -77,9 +71,11 @@ def print_agent(val: UInt128):
 
 def move(dr:Int, i: Int, mut sim: UnsafePointer[UInt128, MutExternalOrigin], mut agent_amount: UInt32):
     comptime lookup = SIMD[DType.int16, 8](-4104, -4096, -4088, -8, 8, 4088, 4096, 4104)
-    energy = sim[i*8]<<24>>118
-    valid_energy_flag=UInt128(0)-UInt128(energy>3)
-    empty_space_flag=UInt128(0)-UInt128(Int((sim[(i*8+Int(lookup[dr]))&16777215]<<126>>126)==0))
+    place_header = sim[(i*8+Int(lookup[dr]))&16777215]
+    agent_header = sim[(i*8)&16777215]
+    energy = get_energy(agent_header)
+    valid_energy_flag=valid_energy(place_header, 3)
+    empty_space_flag=is_empty(place_header)
     agent = (sim+i*8).load[width=8]()
     agent[0] &= ~(1023<<94)
     agent[0] |= (energy-3)<<94
@@ -89,7 +85,7 @@ def move(dr:Int, i: Int, mut sim: UnsafePointer[UInt128, MutExternalOrigin], mut
     agent_amount-=UInt32(Bool(not valid_energy_flag))
 
 def photosyntez(i: Int, mut sim: UnsafePointer[UInt128, MutExternalOrigin]):
-    agent = (sim+i*8).load[width=8]()
+    agent = (sim+i*8).load[width=1]()
     energy = sim[i*8]<<24>>118
     agent[0] &= ~(1023<<94)
     ph_stat = agent[0]>>6
@@ -103,7 +99,7 @@ def eat(dr:Int, i: Int, mut sim: UnsafePointer[UInt128, MutExternalOrigin], mut 
     organic_space_flag=UInt128(0)-UInt128(Int((sim[(i*8+Int(lookup[dr]))&16777215]&3)==2))
     add_energy = ((sim[(i*8+Int(lookup[dr]))&16777215]<<24>>118)*(sim[i*8]<<96>>118))>>10
     add_energy&=organic_space_flag
-    agent = (sim+i*8).load[width=8]()
+    agent = (sim+i*8).load[width=1]()
     agent[0] &= ~(1023<<94)
     agent[0] |= ((energy+add_energy)&1023)<<94
     agent[0]&=valid_energy_flag
@@ -119,7 +115,7 @@ def attack(dr:Int, i: Int, mut sim: UnsafePointer[UInt128, MutExternalOrigin], m
     energy_loss=64-(sim[i*8]<<86>>118)
     valid_energy_flag=UInt128(0)-UInt128(energy>energy_loss)
     
-    agent = (sim+i*8).load[width=8]()
+    agent = (sim+i*8).load[width=1]()
     agent[0] &= ~(1023<<94)
     agent[0] |= ((energy-energy_loss)&1023)<<94
     agent[0]&=valid_energy_flag
@@ -143,18 +139,18 @@ def divide(dr:Int, i: Int, mut sim: UnsafePointer[UInt128, MutExternalOrigin], m
     comptime lookup = SIMD[DType.int16, 8](-4104, -4096, -4088, -8, 8, 4088, 4096, 4104)
     #valid_energy_flag=UInt128(0)-UInt128(energy>3)
     empty_space_flag=UInt128(0)-UInt128(Int((sim[(i*8+Int(lookup[dr]))&16777215]<<126>>126)==0))
-    agent = (sim+i*8).load[width=8]()
+    agent = (sim+i*8).load[width=1]()
     agent[0] &= ~(1023<<94)
     agent[0] |= (res_energy)<<94
     (sim+i*8).store(agent)
-    clone = ((sim+((i*8+lookup[dr])&16777215)).load[width=8]()& ~empty_space_flag)|(agent&empty_space_flag)
+    clone = ((sim+((Int16(i*8)+lookup[dr])&16777215)).load[width=8]()& ~empty_space_flag)|(agent&empty_space_flag)
     (sim+i*8+lookup[dr]).store(clone)
     agent_amount+=UInt32(Bool(empty_space_flag))   
 
 def defend(i: Int, mut sim: UnsafePointer[UInt128, MutExternalOrigin], mut agent_amount: UInt32):
     energy = sim[i*8]<<24>>118
     valid_energy_flag=UInt128(0)-UInt128(energy>15)
-    agent = (sim+i*8).load[width=8]()
+    agent = (sim+i*8).load[width=1]()
     agent[0] &= ~(1023<<94)
     agent[0] |= ((energy-15)&1023)<<94
     agent[0] |= UInt128(3)
@@ -165,7 +161,7 @@ def defend(i: Int, mut sim: UnsafePointer[UInt128, MutExternalOrigin], mut agent
 def rest(i: Int, mut sim: UnsafePointer[UInt128, MutExternalOrigin], mut agent_amount: UInt32):
     energy = sim[i*8]<<24>>118
     valid_energy_flag=UInt128(0)-UInt128(energy>1)
-    agent = (sim+i*8).load[width=8]()
+    agent = (sim+i*8).load[width=1]()
     agent[0] &= ~(1023<<94)
     agent[0] |= ((energy-1)&1023)<<94
     agent[0]&=valid_energy_flag
@@ -181,7 +177,7 @@ def talk_to(dr:Int, message: UInt128, i: Int, mut sim: UnsafePointer[UInt128, Mu
     valid_energy_flag=UInt128(0)-UInt128(energy>2)
     agent_space_flag=UInt128(0)-UInt128(Int((sim[(i*8+Int(lookup[dr]))&16777215]&3)==1))
 
-    agent = (sim+i*8).load[width=8]()
+    agent = (sim+i*8).load[width=1]()
     agent[0] &= ~(1023<<94)
     agent[0] |= ((energy-2)&1023)<<94
     agent[0]&=valid_energy_flag
@@ -191,12 +187,25 @@ def talk_to(dr:Int, message: UInt128, i: Int, mut sim: UnsafePointer[UInt128, Mu
     sim[i*8+Int(lookup[dr])&16777215]|=(((message<<62)&(255<<62))&valid_energy_flag&agent_space_flag)
     agent_amount-=UInt32(Bool(not valid_energy_flag))
 
-def give_energy(dir:Int, amount: Int8, i: Int, mut sim: UnsafePointer[UInt128, MutExternalOrigin], mut agent_amount: UInt32):
-    pass #en -am*alt_stat
+def give_energy(dr:Int, amount: Int8, i: Int, mut sim: UnsafePointer[UInt128, MutExternalOrigin], mut agent_amount: UInt32):
+    energy = sim[i*8]<<24>>118
+    comptime lookup = SIMD[DType.int16, 8](-4104, -4096, -4088, -8, 8, 4088, 4096, 4104)
+    valid_energy_flag=UInt128(0)-UInt128(energy>UInt128(amount))
+    empty_space_flag=UInt128(0)-UInt128(Int((sim[(i*8+Int(lookup[dr]))&16777215]<<126>>126)==0))
+    agent = (sim+i*8).load[width=1]()
+    agent[0] &= ~(1023<<94)
+    agent[0] |= (energy-UInt128(amount))<<94
+    sim[(i*8+Int(lookup[dr]))&16777215]
+    (sim+i*8).store(agent)
 
 
-def jmp(all_cond: UInt128, i: Int, mut sim: UnsafePointer[UInt128, MutExternalOrigin]) -> Bool:
-    return True
+def jmp(dist:UInt128, dir:UInt128, am_cond:UInt128,first_not:UInt128,second_not:UInt128,all_cond: UInt128, mut sim: UnsafePointer[UInt128, MutExternalOrigin]) -> Int:
+    var variable: UInt128
+    comptime lookup = SIMD[DType.int16, 16](
+    for cond in range(am_cond):
+        variable = 
+
+    return 5
 
 def stop(i: Int, mut sim: UnsafePointer[UInt128, MutExternalOrigin]):
     pass
@@ -208,8 +217,12 @@ def get_flag(flag_i: Int, i: Int, mut sim: UnsafePointer[UInt128, MutExternalOri
     return UInt8(0)
 
 
+def step_interpretate():
+    pass
 
-
+def full_world(empty: Bool, mut sim: UnsafePointer[UInt128, MutExternalOrigin], agents_amount: UInt32):
+    var ag_am = agents_amount&16777215
+    
 
 
 
