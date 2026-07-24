@@ -257,7 +257,7 @@ def remove_agent(mut genoms_and_other: List[Agent],mut grid: UnsafePointer[UInt1
             maximum_now=grid[pi]
     for pi in range(65535,0,-1):
         if grid[pi]:
-            print("Позиция последнего:"+String(pi))
+            print("Позиция последнего:"+String(pi)+String(grid[pi]))
             break
     print("Максимальный индекс:"+String(maximum_now))
     print()
